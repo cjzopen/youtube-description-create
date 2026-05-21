@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>影片 Metadata 產生器</title>
+    <style>:root{--bg:#f5f5f5;--card:#fff;--border:#e0e0e0;--accent:#1a73e8;--text:#202124;--muted:#5f6368;--red:#c5221f;--r:8px}*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:48px 24px}main{width:100%;max-width:720px}header{margin-bottom:32px;text-align:center;&>h1{font-size:1.5rem;font-weight:700}&>p{color:var(--muted);margin-top:6px;font-size:.9rem}}.drop-zone{border:2px dashed var(--border);border-radius:var(--r);padding:64px 32px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;background:var(--card);&.over{border-color:var(--accent);background:#e8f0fe}&>.drop-icon{font-size:2.5rem;margin-bottom:12px;color:var(--muted)}&>.drop-text{font-size:1rem;font-weight:600;margin-bottom:4px}&>.drop-sub{color:var(--muted);font-size:.875rem;margin-bottom:16px}}.pick-btn{display:inline-block;padding:8px 20px;background:var(--accent);color:#fff;border-radius:20px;font-size:.875rem;cursor:pointer;user-select:none}.progress{text-align:center;padding:48px 32px;background:var(--card);border:1px solid var(--border);border-radius:var(--r);&>p{color:var(--muted);margin-top:16px;font-size:.9rem}}.spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto}@keyframes spin{to{transform:rotate(360deg)}}.results{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:24px}.field{margin-bottom:20px;&:last-of-type{margin-bottom:0}}.label{display:flex;align-items:center;gap:8px;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px}.copy-btn{font-size:.7rem;font-weight:400;text-transform:none;letter-spacing:0;padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:transparent;cursor:pointer;color:var(--muted);transition:all .15s;&:hover{background:var(--bg)}&.copied{color:var(--accent);border-color:var(--accent)}}.value{font-size:.9375rem;line-height:1.65;white-space:pre-wrap}.actions{display:flex;gap:12px;margin-top:24px;padding-top:20px;border-top:1px solid var(--border)}.action-btn{padding:8px 20px;border:1px solid var(--border);border-radius:6px;background:transparent;cursor:pointer;font-size:.875rem;color:var(--text);transition:all .15s;&:hover{border-color:var(--accent);color:var(--accent)}&.loading{opacity:.6;pointer-events:none}}.thumbnail-wrap{margin-top:20px;&>img{width:100%;border-radius:var(--r);display:block;margin-bottom:10px}}.dl-btn{display:inline-block;padding:6px 16px;background:var(--accent);color:#fff;border-radius:4px;font-size:.8rem;text-decoration:none}.error{background:#fce8e6;color:var(--red);border-radius:var(--r);padding:16px;font-size:.875rem;margin-top:16px}.hidden{display:none}</style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>影片 Metadata 產生器</h1>
+        <p>上傳 MP4，自動產生 YouTube 標題與說明</p>
+      </header>
+
+      <div id="drop-zone" class="drop-zone">
+        <div class="drop-icon">⬆</div>
+        <p class="drop-text">拖放 MP4 至此</p>
+        <p class="drop-sub">或</p>
+        <label class="pick-btn">
+          選擇檔案
+          <input type="file" id="file-input" accept="video/mp4" hidden>
+        </label>
+      </div>
+
+      <div id="progress" class="progress hidden">
+        <div class="spinner"></div>
+        <p id="progress-text">上傳並分析中，請稍候...</p>
+      </div>
+
+      <div id="results" class="results hidden">
+        <div class="field">
+          <div class="label">
+            Title
+            <button class="copy-btn" id="copy-title">複製</button>
+          </div>
+          <div class="value" id="result-title"></div>
+        </div>
+        <div class="field">
+          <div class="label">
+            Description
+            <button class="copy-btn" id="copy-desc">複製</button>
+          </div>
+          <div class="value" id="result-desc"></div>
+        </div>
+        <div class="actions">
+          <button class="action-btn" id="btn-subtitle">生成字幕</button>
+          <button class="action-btn" id="btn-thumbnail">生成顯圖</button>
+        </div>
+        <div id="thumbnail-wrap" class="thumbnail-wrap hidden">
+          <img id="thumbnail-img" src="" alt="顯圖">
+          <a id="thumbnail-dl" class="dl-btn" download="thumbnail.png">下載顯圖</a>
+        </div>
+      </div>
+
+      <div id="error" class="error hidden"></div>
+    </main>
+    <script>
+      const $ = id => document.getElementById(id);
+      let jobId = null, currentTitle = '', currentDesc = '';
+
+      function escHtml(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+
+      const dz = $('drop-zone');
+      dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+      dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+      dz.addEventListener('drop', e => {
+        e.preventDefault(); dz.classList.remove('over');
+        const f = e.dataTransfer.files[0];
+        f?.type === 'video/mp4' ? handle(f) : showErr('請上傳 MP4 格式的影片');
+      });
+      $('file-input').addEventListener('change', e => { if (e.target.files[0]) handle(e.target.files[0]); });
+
+      async function handle(file) {
+        show('progress'); hideErr();
+        const fd = new FormData(); fd.append('video', file);
+        try {
+          const r = await fetch('/api/analyze', { method: 'POST', body: fd });
+          const d = await r.json();
+          if (!r.ok) throw new Error(d.error);
+          jobId = d.job_id;
+          currentTitle = d.title; currentDesc = d.description;
+          $('result-title').textContent = d.title;
+          $('result-desc').innerHTML = escHtml(d.description).replace(/\n/g, '<br>');
+          $('thumbnail-wrap').classList.add('hidden');
+          show('results');
+        } catch (e) { showErr(e.message); show('drop-zone'); }
+      }
+
+      function copy(btn, text) {
+        navigator.clipboard.writeText(text).then(() => {
+          btn.textContent = '已複製'; btn.classList.add('copied');
+          setTimeout(() => { btn.textContent = '複製'; btn.classList.remove('copied'); }, 1500);
+        });
+      }
+      $('copy-title').onclick = function () { copy(this, currentTitle); };
+      $('copy-desc').onclick = function () { copy(this, currentDesc); };
+
+      async function jsonError(r) {
+        const ct = r.headers.get('content-type') || '';
+        if (ct.includes('application/json')) return (await r.json()).error;
+        return `伺服器錯誤 (${r.status})`;
+      }
+
+      $('btn-subtitle').onclick = async function () {
+        this.classList.add('loading'); this.textContent = '生成中...';
+        try {
+          const r = await fetch('/api/subtitle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_id: jobId }),
+          });
+          if (!r.ok) throw new Error(await jsonError(r));
+          const blob = await r.blob();
+          const a = Object.assign(document.createElement('a'), {
+            href: URL.createObjectURL(blob), download: 'subtitle.srt',
+          });
+          a.click(); URL.revokeObjectURL(a.href);
+        } catch (e) { showErr(e.message); }
+        finally { this.classList.remove('loading'); this.textContent = '生成字幕'; }
+      };
+
+      $('btn-thumbnail').onclick = async function () {
+        this.classList.add('loading'); this.textContent = '生成中...';
+        try {
+          const r = await fetch('/api/thumbnail', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_id: jobId }),
+          });
+          const d = await r.json();
+          if (!r.ok) throw new Error(d.error ?? `伺服器錯誤 (${r.status})`);
+          $('thumbnail-img').src = d.image;
+          $('thumbnail-dl').href = d.image;
+          $('thumbnail-wrap').classList.remove('hidden');
+        } catch (e) { showErr(e.message); }
+        finally { this.classList.remove('loading'); this.textContent = '生成顯圖'; }
+      };
+
+      function show(id) {
+        ['drop-zone', 'progress', 'results'].forEach(el =>
+          $(el).classList.toggle('hidden', el !== id));
+      }
+      function showErr(msg) { $('error').textContent = msg; $('error').classList.remove('hidden'); }
+      function hideErr() { $('error').classList.add('hidden'); }
+    </script>
+  </body>
+</html>

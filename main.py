@@ -9,6 +9,20 @@ from notebooklm import NotebookLMClient
 load_dotenv()
 
 
+async def analyze_file(file_path: str) -> str:
+    """上傳本地影片檔，透過 NotebookLM 分析並回傳內容摘要。"""
+    async with await NotebookLMClient.from_storage() as client:
+        nb = await client.notebooks.create("video-file-analysis")
+        await client.sources.add_file(nb.id, file_path, wait=True)
+        result = await client.chat.ask(
+            nb.id,
+            "請詳細摘要這支影片的主要內容、重點論述與核心結論。",
+        )
+        content = re.sub(r"\[\d+(?:[,\-]\s*\d+)*\]", "", result.answer).strip()
+        await client.notebooks.delete(nb.id)
+        return content
+
+
 async def analyze_youtube(youtube_url: str) -> str:
     """輸入 YouTube 網址，透過 NotebookLM 分析並回傳內容摘要。"""
     async with await NotebookLMClient.from_storage() as client:
@@ -62,7 +76,7 @@ def generate_metadata(content: str) -> dict:
 {content}"""
 
     response = client.models.generate_content(
-        model="gemini-3.5-flash",
+        model=os.environ["GEMINI_MODEL"],
         contents=prompt,
     )
     raw = response.text.strip()

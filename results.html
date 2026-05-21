@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-TW">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Results</title>
+    <style>:root{--bg:#f5f5f5;--card:#fff;--border:#e0e0e0;--accent:#1a73e8;--text:#202124;--muted:#5f6368;--red:#c5221f;--r:8px}*{box-sizing:border-box;margin:0;padding:0}body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--text);padding:32px}header{margin-bottom:20px;&>h1{font-size:1.25rem;font-weight:600}&>p{color:var(--muted);font-size:.875rem;margin-top:4px}}.filters{display:flex;flex-wrap:wrap;gap:20px;align-items:center;margin-bottom:24px;padding:16px 20px;background:var(--card);border:1px solid var(--border);border-radius:var(--r)}.filter-group{display:flex;align-items:center;gap:8px}.filter-label{font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}.filter-btn{font-size:.8125rem;padding:4px 14px;border:1px solid var(--border);border-radius:20px;background:transparent;cursor:pointer;color:var(--muted);transition:all .15s;&:hover{border-color:var(--accent);color:var(--accent)}&.active{background:var(--accent);border-color:var(--accent);color:#fff}}.card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:20px 24px;margin-bottom:16px;&.failed{opacity:.55}&.hidden{display:none}}.badge{display:inline-block;font-size:.75rem;font-weight:600;padding:2px 10px;border-radius:12px;margin-bottom:10px;&.regular{background:#e8f0fe;color:var(--accent)}&.shorts{background:#fce8e6;color:var(--red)}&.failed{background:#f1f3f4;color:var(--muted)}}.url{font-size:.8rem;margin-bottom:14px;&>a{color:var(--muted);text-decoration:none;&:hover{color:var(--accent)}}}.field{margin-bottom:14px;&:last-child{margin-bottom:0}}.label{display:flex;align-items:center;gap:8px;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:6px}.copy-btn{font-size:.7rem;font-weight:400;text-transform:none;letter-spacing:0;padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:transparent;cursor:pointer;color:var(--muted);transition:all .15s;&:hover{background:var(--bg)}&.copied{color:var(--accent);border-color:var(--accent)}}.value{font-size:.9375rem;line-height:1.65;white-space:pre-wrap}.original-title{font-size:.9375rem;font-weight:600;margin-bottom:2px}.published-at{font-size:.8rem;color:var(--muted);margin-bottom:14px}.error-msg{font-size:.875rem;color:var(--red)}</style>
+  </head>
+  <body>
+    <header>
+      <h1>YouTube Metadata Results</h1>
+      <p id="summary"></p>
+    </header>
+    <div id="filters" class="filters"></div>
+    <main id="cards"></main>
+    <script>
+      fetch('./results.json')
+        .then(r => r.json())
+        .then(render)
+        .catch(err => document.getElementById('cards').textContent = '無法讀取 results.json：' + err);
+
+      function esc(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+
+      function copyText(btn, url, field) {
+        fetch('./results.json')
+          .then(r => r.json())
+          .then(data => {
+            const r = data.find(r => r.url === url);
+            navigator.clipboard.writeText(r[field]).then(() => {
+              btn.textContent = '已複製';
+              btn.classList.add('copied');
+              setTimeout(() => { btn.textContent = '複製'; btn.classList.remove('copied'); }, 1500);
+            });
+          });
+      }
+
+      function render(data) {
+        const counts = { regular: 0, shorts: 0, failed: 0 };
+        data.forEach(r => counts[r.status === 'failed' ? 'failed' : r.type]++);
+        document.getElementById('summary').textContent =
+          `一般影片 ${counts.regular} 支 ／ Shorts ${counts.shorts} 支 ／ 失敗 ${counts.failed} 支`;
+
+        let activeType = 'all', activeYear = 'all';
+        const years = [...new Set(data.map(r => r.published_at?.slice(0, 4)).filter(Boolean))].sort();
+
+        function applyFilter() {
+          document.querySelectorAll('#cards .card').forEach(card => {
+            const r = data[parseInt(card.dataset.idx)];
+            const ok = (activeType === 'all' || r.type === activeType) &&
+                       (activeYear === 'all' || r.published_at?.startsWith(activeYear));
+            card.classList.toggle('hidden', !ok);
+          });
+        }
+
+        function makeGroup(label, pairs, attr, setActive) {
+          const g = document.createElement('div');
+          g.className = 'filter-group';
+          g.innerHTML = `<span class="filter-label">${label}</span>`;
+          pairs.forEach(([val, text]) => {
+            const btn = document.createElement('button');
+            btn.className = 'filter-btn' + (val === 'all' ? ' active' : '');
+            btn.textContent = text;
+            btn.dataset[attr] = val;
+            btn.onclick = () => {
+              setActive(val);
+              applyFilter();
+              g.querySelectorAll('.filter-btn').forEach(b => b.classList.toggle('active', b.dataset[attr] === val));
+            };
+            g.appendChild(btn);
+          });
+          return g;
+        }
+
+        const bar = document.getElementById('filters');
+        bar.appendChild(makeGroup('類型',
+          [['all', '全部'], ['regular', '一般影片'], ['shorts', 'Shorts']],
+          'type', v => { activeType = v; }));
+        if (years.length > 1)
+          bar.appendChild(makeGroup('年份',
+            [['all', '全部'], ...years.map(y => [y, y])],
+            'year', v => { activeYear = v; }));
+
+        const cards = document.getElementById('cards');
+        data.forEach((r, i) => {
+          const failed = r.status === 'failed';
+          const typeLabel = r.type === 'regular' ? '一般影片' : 'Shorts';
+          const card = document.createElement('div');
+          card.className = 'card' + (failed ? ' failed' : '');
+          card.dataset.idx = i;
+          card.innerHTML = `
+            <div class="badge ${failed ? 'failed' : r.type}">${failed ? '失敗' : typeLabel}</div>
+            <div class="url"><a href="${r.url}" target="_blank">${r.url}</a></div>
+            ${r.original_title ? `<div class="original-title">${esc(r.original_title)}</div>` : ''}
+            ${r.published_at ? `<div class="published-at">${r.published_at}</div>` : ''}
+            ${failed
+              ? `<div class="error-msg">${esc(r.error ?? '')}</div>`
+              : `<div class="field">
+                   <div class="label">Title
+                     <button class="copy-btn" onclick="copyText(this,'${r.url}','title')">複製</button>
+                   </div>
+                   <div class="value">${esc(r.title ?? '')}</div>
+                 </div>
+                 <div class="field">
+                   <div class="label">Description
+                     <button class="copy-btn" onclick="copyText(this,'${r.url}','description')">複製</button>
+                   </div>
+                   <div class="value">${esc(r.description ?? '')}</div>
+                 </div>`
+            }`;
+          cards.appendChild(card);
+        });
+      }
+    </script>
+  </body>
+</html>

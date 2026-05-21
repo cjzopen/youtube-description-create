@@ -1,0 +1,4 @@
+notebooklm-py[browser]
+google-generativeai
+python-dotenv
+requests

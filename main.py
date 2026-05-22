@@ -9,11 +9,18 @@ from notebooklm import NotebookLMClient
 load_dotenv()
 
 
-async def analyze_file(file_path: str) -> str:
+async def analyze_file(file_path: str, progress_cb=None) -> str:
     """上傳本地影片檔，透過 NotebookLM 分析並回傳內容摘要。"""
+    def p(step):
+        if progress_cb:
+            progress_cb(step)
+
     async with await NotebookLMClient.from_storage() as client:
+        p("notebooklm_create")
         nb = await client.notebooks.create("video-file-analysis")
-        await client.sources.add_file(nb.id, file_path, wait=True)
+        p("notebooklm_index")
+        await client.sources.add_file(nb.id, file_path, wait=True, wait_timeout=3600.0)
+        p("notebooklm_analyze")
         result = await client.chat.ask(
             nb.id,
             "請詳細摘要這支影片的主要內容、重點論述與核心結論。",
@@ -61,7 +68,7 @@ def generate_metadata(content: str) -> dict:
 
 【Description規則】
 - 開門見山，直接說明影片情境、講什麼、用什麼方法解決什麼問題
-- 具體描述影片中的背景、做法、方法論，並寫下結論與實質資訊，讓不看影片也能掌握實質內容
+- 具體描述影片中的背景、做法、方法論，並寫下結論與實質資訊，不看影片也能掌握實質內容
 - 結尾加上合適的hashtag，不限數量，但要與內容相關（若是shorts一定要加上 #shorts）
 - 禁止使用以下類型的空洞語句：
   「本影片」「精彩內容」「乾貨滿滿」「一起來了解」「不容錯過」「讓我們看看」「歡迎收看」或僅描述議程流程而不提供實質資訊

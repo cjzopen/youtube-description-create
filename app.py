@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import os
 import tempfile
@@ -20,18 +19,9 @@ _SIZE_THRESHOLD = 500 * 1024 * 1024  # 500 MB
 _jobs: dict[str, dict] = {}
 
 
-def _extract_chapters(file_path: str, model: str, api_key: str) -> str:
+def _extract_chapters(gemini_file_name: str, model: str, api_key: str) -> str:
     client = genai.Client(api_key=api_key)
-    video_file = client.files.upload(
-        file=file_path,
-        config=types.UploadFileConfig(mime_type="video/mp4"),
-    )
-    while video_file.state.name == "PROCESSING":
-        time.sleep(3)
-        video_file = client.files.get(name=video_file.name)
-    if video_file.state.name == "FAILED":
-        client.files.delete(name=video_file.name)
-        return ""
+    video_file = client.files.get(name=gemini_file_name)
     response = client.models.generate_content(
         model=model,
         contents=[
@@ -50,7 +40,6 @@ def _extract_chapters(file_path: str, model: str, api_key: str) -> str:
             ),
         ],
     )
-    client.files.delete(name=video_file.name)
     return response.text.strip()
 
 
@@ -58,13 +47,15 @@ def _run_analyze(job_id: str, file_path: str):
     def progress(step):
         _jobs[job_id]["step"] = step
 
-    try:
-        content = asyncio.run(analyze_file(file_path, progress_cb=progress))
+    api_key = os.environ["GEMINI_API_KEY"]
+    model = os.environ["GEMINI_MODEL"]
+    gemini_file_name = None
 
-        progress("gemini_upload")
-        api_key = os.environ["GEMINI_API_KEY"]
-        model = os.environ["GEMINI_MODEL"]
-        chapters = _extract_chapters(file_path, model, api_key)
+    try:
+        content, gemini_file_name = analyze_file(file_path, progress_cb=progress)
+
+        progress("gemini_chapters")
+        chapters = _extract_chapters(gemini_file_name, model, api_key)
 
         progress("gemini_metadata")
         metadata = generate_metadata(content)
@@ -82,6 +73,12 @@ def _run_analyze(job_id: str, file_path: str):
         )
     except Exception as e:
         _jobs[job_id].update({"status": "error", "step": "error", "error": str(e)})
+    finally:
+        if gemini_file_name:
+            try:
+                genai.Client(api_key=api_key).files.delete(name=gemini_file_name)
+            except Exception:
+                pass
 
 
 @app.route("/")

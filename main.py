@@ -2,32 +2,46 @@ import asyncio
 import json
 import os
 import re
+import time
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
 from notebooklm import NotebookLMClient
 
 load_dotenv()
 
 
-async def analyze_file(file_path: str, progress_cb=None) -> str:
-    """上傳本地影片檔，透過 NotebookLM 分析並回傳內容摘要。"""
+def analyze_file(file_path: str, progress_cb=None) -> tuple[str, str]:
+    """上傳本地影片檔，透過 Gemini Files API 分析，回傳 (內容摘要, gemini_file_name)。"""
     def p(step):
         if progress_cb:
             progress_cb(step)
 
-    async with await NotebookLMClient.from_storage() as client:
-        p("notebooklm_create")
-        nb = await client.notebooks.create("video-file-analysis")
-        p("notebooklm_index")
-        await client.sources.add_file(nb.id, file_path, wait=True, wait_timeout=3600.0)
-        p("notebooklm_analyze")
-        result = await client.chat.ask(
-            nb.id,
+    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+
+    p("gemini_upload")
+    video_file = client.files.upload(
+        file=file_path,
+        config=types.UploadFileConfig(mime_type="video/mp4"),
+    )
+
+    p("gemini_processing")
+    while video_file.state.name == "PROCESSING":
+        time.sleep(3)
+        video_file = client.files.get(name=video_file.name)
+
+    if video_file.state.name == "FAILED":
+        raise RuntimeError("Gemini 影片處理失敗")
+
+    p("gemini_analyze")
+    response = client.models.generate_content(
+        model=os.environ["GEMINI_MODEL"],
+        contents=[
+            video_file,
             "請詳細摘要這支影片的主要內容、重點論述與核心結論。",
-        )
-        content = re.sub(r"\[\d+(?:[,\-]\s*\d+)*\]", "", result.answer).strip()
-        await client.notebooks.delete(nb.id)
-        return content
+        ],
+    )
+    return response.text.strip(), video_file.name
 
 
 async def analyze_youtube(youtube_url: str) -> str:

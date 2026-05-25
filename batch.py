@@ -50,7 +50,7 @@ async def _process_video(video_id: str, video_type: str, meta: dict, results: li
   print(f"\n[{index}/{total}] [{video_type}] {url}")
   try:
     content = await analyze_youtube(url)
-    metadata = generate_metadata(content)
+    metadata = generate_metadata(content, is_shorts=(video_type == "shorts"))
     results.append({"type": video_type, "url": url, **meta, **metadata})
     print(f"  title: {metadata['title']}")
   except Exception as e:

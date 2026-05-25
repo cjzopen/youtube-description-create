@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 .playwright/
 storage_state.json
+results.json
+n.md

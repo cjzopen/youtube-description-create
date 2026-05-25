@@ -71,9 +71,9 @@ pip install -r requirements.txt
 - 500 MB 以下：讀入記憶體處理
 - 500 MB 以上：串流寫入磁碟
 
-**分析流程**（頁面上可即時追蹤進度）：
+**分析流程**：
 1. 上傳影片至 Gemini
-2. Gemini 處理影片中
+2. Gemini 處理影片（Gemini Files API）
 3. 分析影片內容
 4. 提取章節時間戳
 5. 生成標題與說明
